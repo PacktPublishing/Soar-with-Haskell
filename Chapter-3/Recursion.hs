@@ -1,5 +1,3 @@
-import Prelude hiding (sum, product, and, reverse, odd, even, zip, concat)
-
 import Data.List (tails)
 
 -- 3.1.1 List Syntax
@@ -30,13 +28,6 @@ redSuits3 = Hearts : Diamonds : []
 
 addOne :: [Int] -> [Int]
 addOne l = 1 : l
-
--- # 3.1.3 Predefined List Functions
-
-sum :: [Integer] -> Integer
-sum l
-  | null l     = 0
-  | otherwise  = head l + sum (tail l)
 
 -- # 3.1.4 List Comprehensions
 
@@ -118,12 +109,6 @@ treeToList :: Tree a -> [a]
 treeToList Empty          = []
 treeToList (Branch l x r) = x : treeToList l ++ treeToList r
 
--- # 3.4.1 Structural Recursion on Lists
-
-and :: [Bool] -> Bool
-and []     = True
-and (x:xs) = x && and xs
-
 -- # 3.4.2 Structural Recursion on Other Algebraic Datatypes
 
 literals :: Expr -> [Int]
@@ -131,10 +116,6 @@ literals (Lit n)     = [n]
 literals (Add e1 e2) = literals e1 ++ literals e2
 
 -- # 3.5.1 Primitive Recursion
-
-product :: [Integer] -> Integer
-product []     = 1
-product (x:xs) = x * product xs
 
 tails' :: [a] -> [[a]]
 tails' []     = []
@@ -229,10 +210,6 @@ reverseAcc l = go l [] where
   go []     acc = acc
   go (x:xs) acc = go xs (x:acc)
 
-reverse :: [a] -> [a]
-reverse []     = []
-reverse (x:xs) = reverse xs ++ [x]
-
 -- # 3.5.6 Recursion on Nested Datatypes
 
 doubleTree :: Tree [Integer] -> Tree [Integer]
@@ -245,21 +222,10 @@ doubleList :: [Integer] -> [Integer]
 doubleList []     = []
 doubleList (x:xs) = (2*x) : doubleList xs
 
-concat :: [[a]] -> [a]
-concat []       = []
-concat (xs:xss) = xs ++ concat xss
-
 concat' :: [[a]] -> [a]
 concat' xss = [ x | xs <- xss, x <- xs ]
 
 -- # 3.5.7 Mutual Recursion
-
-even, odd :: Integer -> Bool
-even 0 = True
-even n = odd (n-1)
-
-odd 0 = False
-odd n = even (n-1)
 
 data RoseTree a = Node a (Forest a)
 data Forest a = Nil' | Cons' (RoseTree a) (Forest a)
@@ -277,13 +243,6 @@ concat3 (xs:xss) = concatAux xs xss where
   concatAux :: [a] -> [[a]] -> [a]
   concatAux []     xss = concat3 xss
   concatAux (x:xs) xss = x : concatAux xs xss
-
--- # 3.5.8 Simultaneous Recursion on Multiple Structures
-
-zip :: [a] -> [b] -> [(a,b)]
-zip []     _      = [] 
-zip _      []     = []
-zip (x:xs) (y:ys) = (x,y) : zip xs ys
 
 -- # 3.5.9 Combining Variations
 
