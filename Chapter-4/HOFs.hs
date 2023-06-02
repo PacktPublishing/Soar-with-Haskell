@@ -2,6 +2,9 @@ import Prelude hiding (dropWhile)
 
 import Data.Char (isSpace)
 
+inc :: Integer -> Integer
+inc n = 1 + n
+
 -- # 4.1.1 Dropping a Prefix
 
 dropSpaces :: String -> String
@@ -76,17 +79,10 @@ isortGen comp l = insertAll l [] where
 isortAsc :: [Int] -> [Int]
 isortAsc l = isortGen (<=) l
 
-
 isortDesc' :: [Int] -> [Int]
 isortDesc' l = isortGen (>=) l
 
 -- # 4.2.1 Folding Lists
-
--- Predefined function:
---
--- foldr :: (a -> b -> b) -> b -> [a] -> b
--- foldr c n []     = n
--- foldr c n (x:xs) = c x (foldr c n xs) 
 
 sum2 :: [Integer] -> Integer
 sum2 l = foldr (+) 0 l
@@ -96,8 +92,7 @@ and l = foldr (&&) True l
 
 -- # 4.2.2 Folds for Other Algebraic Datatypes
 
--- copied from chapter 3
-data Expr = Lit Int | Add Expr Expr
+data Expr = Lit Int | Add Expr Expr -- copied from chapter 3
 
 foldExpr :: (b -> b -> b) -> (Int -> b) -> Expr -> b
 foldExpr a l (Lit n)     = l n
@@ -111,8 +106,7 @@ renderExpr e = foldExpr a show e where
   a :: String -> String -> String
   a s1 s2 = s1 ++ " + " ++ s2
 
--- copied from chapter 3
-data Tree a = Empty | Branch (Tree a) a (Tree a)
+data Tree a = Empty | Branch (Tree a) a (Tree a) -- copied from chapter 3
 
 foldTree :: (b -> a -> b -> b) -> b -> Tree a -> b
 foldTree b e Empty          = e
@@ -161,7 +155,6 @@ reverseAcc2 l = foldl u [] l where
 sumAcc :: [Int] -> Int
 sumAcc l = foldl (+) 0 l
 
-
 -- # 4.4.1 Standard Deviation
 
 average :: [Float] -> Float
@@ -197,9 +190,3 @@ budgetBuy budget ps =
   where
    cprices = tail (scanl (+) 0 (map price ps))
    inBudget (p,cprice) = cprice <= budget
-
-
-
-
-
-
