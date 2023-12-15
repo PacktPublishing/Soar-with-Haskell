@@ -1,12 +1,21 @@
 import Prelude hiding (or, truncate)
+import Data.Time 
 
-data Currency = EUR | GBP | JPY | USD
+data Currency = EUR | GBP
 
-data Date = MkDate
-  deriving Show
+data Date = MkDate Integer
+  -- MkDate 0 is the "epoch", the reference date.
+  -- We use the underlying representation of the Day
+  -- type from the Data.Time library
+  deriving (Eq, Ord)
+
+instance Show Date where
+  show (MkDate d) = show (ModifiedJulianDay d)
 
 date :: String -> Date
-date _ = MkDate
+date s = 
+  let timeFromString = parseTimeOrError True defaultTimeLocale "%e %b %Y" s :: UTCTime
+  in MkDate (toModifiedJulianDay (utctDay timeFromString))
 
 data Contract
   = One Currency
@@ -71,307 +80,68 @@ american d1 d2 c = before `thereafter` after where
   after  = anytime (truncate d2 (c `or` zero))
 
 data ExpiryDate = ExpiresOn Date | ExpiresNever
-  deriving Show
+  deriving (Eq, Ord, Show)
 
 expiry :: Contract -> ExpiryDate
-expiry = undefined
+expiry (One cur)           = ExpiresNever
+expiry (Truncate d c)      = ExpiresOn d `min` expiry c
+expiry (Get c)             = expiry c
+expiry (Scale k c)         = expiry c
+expiry (Give c)            = expiry c
+expiry (Both c1 c2)        = expiry c1 `min` expiry c2
+expiry (Or c1 c2)          = expiry c1 `max` expiry c2
+expiry (Thereafter c1 c2)  = expiry c1 `max` expiry c2
+expiry (Anytime c)         = expiry c
 
 value :: Contract -> Currency -> Date -> Double
-value = undefined
+value c cur d = go c where
+  go :: Contract -> Double 
+  go c 
+   | ExpiresOn d >=  expiry c  = 0.0
+  go (One cur')                = exch cur cur'
+  go (Truncate d c)            = go c
+  go (Get c)                   
+    | Just d' <- horizon c     = disc d' (go c) d
+    | otherwise                = 0.0
+  go (Scale k c)               = k * go c
+  go (Give c)                  = negate (go c)
+  go (Both c1 c2)              = go c1 + go c2
+  go (Or c1 c2)                = go c1 `max` go c2
+  go (Thereafter c1 c2)   
+    | ExpiresOn d < expiry c1  = go c1
+    | otherwise                = go c2
+  go (Anytime c)         
+    | Just _ <- horizon c      = snell (value c cur) d
+    | otherwise                = 0.0
+  
+  exch :: Currency -> Currency -> Double
+  exch EUR GBP = 1.4
+  exch GBP EUR = recip 1.4
+  exch _   _   = 1
 
+  horizon :: Contract -> Maybe Date
+  horizon = previous . expiry
 
+  previous :: ExpiryDate -> Maybe Date
+  previous (ExpiresOn (MkDate d)) 
+    | d > 0 = Just (MkDate (d-1))
+  previous _ = Nothing
 
+  next :: Date -> Date
+  next (MkDate d) = MkDate (d+1)
 
+  disc :: Date -> Double -> Date -> Double
+  disc (MkDate h) v (MkDate d)
+   = v / (1 + rate**(fromIntegral (h - d) / 365))
 
--- instance S.Semiring (Contract obs) where
---   zero  = BlackHole
---   one   = Zero
---   plus  = Or
---   times = And
--- 
--- instance Multiplicative (Contract obs) where
---   timesInverse = Give
--- 
--- -- | A contract that has no rights or obligations.
--- --
--- -- It has an infinite horizon.
--- -- It is the multiplicative identity, 'S.one'.
--- zero :: Contract obs
--- zero = Zero
--- 
--- -- | A contract that gives exactly one unit of the specified currency to the
--- -- holder of the contract.
--- --
--- -- It has an infinite horizon.
--- one :: Currency -> Contract obs
--- one = One
--- 
--- -- | Choose to acquire either of two contracts, but not both.
--- --
--- -- Its horizon is the greater of the two contracts' horizons.
--- -- It is the addition for contracts ('S.plus').
--- or :: Contract obs -> Contract obs -> Contract obs
--- or = Or
--- 
--- -- | Acquire both contracts.
--- --
--- -- Its horizon is the lesser of the two contracts' horizons.
--- -- It is the multiplication for contracts ('S.times').
--- and :: Contract obs -> Contract obs -> Contract obs
--- and = And
--- 
--- -- | Give a contract to the other party.
--- --
--- -- This transfers your obligations to the other party and vice-versa.
--- -- Its horizon is the horizon of the underlying contract.
--- --
--- -- It calculates multiplicative inverses ('timesInverse').
--- give :: Contract obs -> Contract obs
--- give = Give
--- 
--- -- | Truncate the contract's horizon to the given time.
--- --
--- -- Its horizon is the lesser of the given time and the contract's horizon.
--- truncate :: Time -> Contract obs -> Contract obs
--- truncate = Truncate
--- 
--- -- | Follow one contract by another.
--- -- 
--- -- If you acquire @followedBy c1 c2@, you acquire @c1@, if it has
--- -- not yet expired. If it has, and @c2@ has not, you acquire @c@.
--- --
--- -- The horizon is the greater of the two contracts' horizons.
--- followedBy :: Contract obs -> Contract obs -> Contract obs
--- followedBy = FollowedBy
--- 
--- -- | Modify a contract by an observable.
--- --
--- -- If you acquire this contract, you acquire the rights and obligations of the
--- -- underlying contract, modified by the observable at the time of acquisition.
--- --
--- -- The horizon is the horizon of the underlying contract.
--- scale :: obs -> Contract obs -> Contract obs
--- scale = Scale
--- 
--- -- | Get a contract at its horizon.
--- --
--- -- This contract requires you to obtain the underlying contract at its horizon.
--- --
--- -- The horizon is the horizon of the underlying contract.
--- get :: Contract obs -> Contract obs
--- get = Get
--- 
--- -- | Get a contract at any time before or at its horizon.
--- --
--- -- If you acquire @anytime c@, you are required to obtain @c@, but can do so
--- -- at any time between acquiring @c@ and @c@'s horizon.
--- --
--- -- The horizon is the horizon of the underlying contract.
--- anytime :: Contract obs -> Contract obs
--- anytime = Anytime
--- 
--- -------------------------------------------------------------------------------
--- -- Horizon
--- 
--- -- | Determine the time horizon of a contract (i.e. the latest time before
--- -- which it can be acquired).
--- --
--- -- Note that this is a semiring morphism, i.e.,
--- --
--- -- prop> horizon S.zero = horizon BlackHole = Finite 0 = S.zero
--- -- prop> horizon S.one  = horizon Zero = Infinite = S.one
--- -- prop> horizon (c1 `S.plus` c2) = horizon c1 `S.plus` horizon c2
--- -- prop> horizon (c1 `S.times` c2) = horizon c1 `S.times` horizon c2
--- --
--- -- for any contracts @c1@ and @c2@.
--- --
--- horizon :: Contract obs -> Time
--- horizon BlackHole          = Finite 0 -- S.zero
--- horizon Zero               = Infinite -- S.one
--- horizon One{}              = Infinite
--- horizon (Or c1 c2)         = horizon c1 `S.plus` horizon c2
--- horizon (And c1 c2)        = horizon c1 `S.times` horizon c2
--- horizon (Give c)           = horizon c
--- horizon (Truncate t _)     = t
--- horizon (FollowedBy c1 c2) = horizon c1 `S.plus` horizon c2
--- horizon (Scale _ c)        = horizon c
--- horizon (Get c)            = horizon c
--- horizon (Anytime c)        = horizon c
--- 
--- -------------------------------------------------------------------------------
--- -- Worth
--- 
--- type Worth = Max Double
--- type Exchange sg = Currency -> Time -> sg
--- type Valuation obs sg = obs -> Time -> sg -> sg
--- 
--- -- | The worth of a contract (i.e. the value of a contract if it were to be
--- -- acquired at a certain point in time).
--- --
--- -- In what follows, assume that all exchanges and valuations never return
--- -- 'S.zero'.
--- --
--- -- Property: For a contract @c@ with horizon @h@, any valuation @v@,
--- -- exchange @e@ and time @t@:
--- --
--- -- prop> worth contract e v t /= S.zero iff t < horizon c
--- --
--- -- Thus we have an alternative definition of 'horizon', where the horizon
--- -- of a contract @c@ is the earliest time @t@ such that there exists an
--- -- exchange @e@, such that @worth contract e t = S.zero@.
--- --
--- -- Notice that if there exists an @e@ and @v@,
--- -- such that @worth contract e v t /= S.zero@,
--- -- then for all @v'@ and @e'@, @worth contract v' e' t /= S.zero@.
--- --
--- -- This function is an multiplicative semiring morphism, i.e., for any contracts
--- -- @c1@ and @c2@:
--- --
--- -- prop> worth S.zero = worth BlackHole = S.zero
--- -- prop> worth S.one = worth Zero = S.one
--- -- prop> worth (c1 `S.times` c2) = worth (And c1 c2) = worth c1 `S.times` worth c2
--- -- prop> worth (c1 `S.plus` c2) = worth (Or c1 c2) = worth c1 `S.plus` worth c2
--- --
--- -- And for @c@ s.t. @c /= S.zero@:
--- -- prop> worth (timesInverse c) = worth (Give c) = timesInverse (worth c)
--- --
--- worth
---   :: (Multiplicative sg, Discounted sg)
---   => Contract obs -> Valuation obs sg -> Exchange sg -> Time -> sg
--- worth BlackHole _valuation _exchange _time =
---   S.zero -- a black hole is worse than worthless: it eats all your money
---   
--- worth Zero _valuation _exchange _time =
---   S.one
---   
--- worth (One c) _valuation exchange time =
---   exchange c time
---   
--- worth (Or c1 c2)  valuation exchange time =
---   worth c1 valuation exchange time `S.plus` worth c2 valuation exchange time
---     
--- worth (And c1 c2) valuation exchange time =
---   worth c1 valuation exchange time `S.times` worth c2 valuation exchange time
---     
--- worth (Give c) valuation exchange time
---   | time < horizon c = timesInverse (worth c valuation exchange time)
---   | otherwise = S.zero
---   
--- worth (Truncate t0 c) valuation exchange time
---   | time < (horizon c `S.times` t0) = worth c valuation exchange time
---   | otherwise = S.zero
---   
--- worth (FollowedBy c1 c2) valuation exchange time
---   | time < horizon c1 = worth c1 valuation exchange time
---   | otherwise = worth c2 valuation exchange time
---   
--- worth (Scale observable c) valuation exchange time =
---   valuation observable time (worth c valuation exchange time)
---   
--- worth (Get c) valuation exchange time = case horizon c of
---   Infinite -> error "Cannot get a contract with an infinite horizon."
---   h@Finite{}
---     | time < h, Just h' <- previous h, Just dTime <- delta time h' ->
---         discount dTime (worth c valuation exchange h')
---     | otherwise -> S.zero
--- 
--- worth (Anytime c) valuation exchange time = case horizon c of
---   Infinite ->
---     error "anytime contract of a contract with an infinite horizon"
---   h@Finite{}
---     | time < h, Just h' <- previous h ->
---         let discounted t = discount dTime worthAtT where
---               worthAtT = worth (Anytime c) valuation exchange t
---               Just dTime = delta time t
---             w = worth c valuation exchange time
---         in S.ssum (w:[discounted between | between <- drop 1 (steps time h')])
---         -- This kind of computes a snell envelope. The sum of this list dominates
---         -- the worth @w@ of @c@ at the current time, and the worth of @Anytime c@
---         -- at any later point, up to the horizon @h@.
---     | otherwise -> S.zero
---   
--- 
--- -------------------------------------------------------------------------------
--- -- Ho-Lee lattice based model of evolution of inflation.
--- 
--- -- | Discount a future value backwards in time.
--- class Discounted v where
---   -- | Discount a value.
---   discount
---     :: Int -- ^ number of timesteps
---     -> v -- ^ value in the future to discount
---     -> v -- ^ discounted value
--- 
--- instance Discounted (Max Double) where
---   discount n = fmap (fromRational . hoLee n 0.05 0.01 . toRational)
--- 
--- -- | The evolution of the interest according to the Ho-Lee lattice model.
--- --
--- -- Note that this model does in fact have a closed-from solution.
--- --
--- -- The function takes a number of time steps to simulate, and an inital rate.
--- -- It then adds or subtracts @0.01@ from this rate in every time step.
--- -- The result is a list of distributions over interest rates, where each
--- -- distribution corresponds to the situtation in a particular time slice.
--- --
--- -- Examples:
--- --
--- -- >>> mapM_ (tabulate "Rate" "Probability") (interestEvolution 0 0.07)
--- -- > Rate   | Probability
--- -- > -------+------------
--- -- > 7.0e-2 | 1.0
--- -- >
--- -- >>> mapM_ (tabulate "Rate" "Probability") (interestEvolution 2 0.07)
--- -- > Rate   | Probability
--- -- > -------+------------
--- -- > 9.0e-2 | 0.25       
--- -- > 7.0e-2 | 0.5        
--- -- > 5.0e-2 | 0.25       
--- -- >
--- -- > Rate                  | Probability
--- -- > ----------------------+------------
--- -- > 8.0e-2                | 0.5        
--- -- > 6.0000000000000005e-2 | 0.5        
--- -- > 
--- -- > Rate   | Probability
--- -- > -------+------------
--- -- > 7.0e-2 | 1.0
--- --
--- interestEvolution
---    :: (Ord a, Num a, IsProbability sg, Multiplicative sg)
---    => Int -> a -> a -> [Dist sg a]
--- interestEvolution n rate drate
---   | n <= 0 = [return rate]
---   | otherwise =
---       let evolution = interestEvolution (n - 1) rate drate
---           slice = normalise $ do
---             r <- head evolution
---             categorical [(prob 0.5, r - drate), (prob 0.5, r + drate)]
---       in slice : evolution
--- 
--- -- | Discount a value over a number of time steps according to a given rate.
--- --
--- -- Given a number of time steps and an initial rate, and the future value,
--- -- this function discounts the value back in time to the present. The interest
--- -- rate is evolved according to the 'interestEvolution' model.
--- --
--- -- Example (discounting the value 100 over two timesteps, with an initial rate
--- -- of 7 percent and changing the rate by +/- 0.01 percent every step):
--- --
--- -- >>> hoLee 2 0.07 0.01 100
--- -- 87.35150244584206
--- --
--- hoLee
---   :: forall a.(Ord a, Fractional a) => Int -> a -> a -> a -> a
--- hoLee n rate0 drate worth0 =
---   let dist = interestEvolution n rate0 drate :: [Dist Double a]
---       evolution = map (map snd . runDist) dist
---       discAvg rate v1 v2 = (v1 + v2) / (2 + 2*rate)
---         -- discV1 = v1 / (1 + r)
---         -- discV2 = v2 / (1 + r)
---         -- discAvg = (discV1 + discV2) / 2
---         --         = (v1 + v2) / (2 + 2*rate)
---       discounted :: [a] -> [a] -> [a]
---       discounted [worth] _ = [worth]
---       discounted worths slice = zipWith3 discAvg slice worths (tail worths)
---   in head $ foldl' discounted (replicate (n + 1) worth0) (drop 1 evolution) 
+  snell :: (Date -> Double) -> Date -> Double
+  snell f d 
+    | f d > negInfty = f d `max` (disc (next d) (snell f (next d)) d)
+    | otherwise      = negInfty
+
+    -- assumed fixed interest rate
+  rate :: Double 
+  rate = 0.03
+
+  negInfty :: Double
+  negInfty = -1/0
