@@ -70,7 +70,7 @@ tom :: Person
 tom = MkPerson "Tom" 45
 
 age :: Person -> Int
-age (MkPerson n a) = a
+age (MkPerson _ a) = a
 
 age' :: Person -> Int
 age' (MkPerson _ a) = a
@@ -159,22 +159,28 @@ idBool x = x
 idChar :: Char -> Char
 idChar x = x
 
-id :: a -> a
-id x = x
+-- Already predefind in Prelude:
+--
+-- id :: a -> a
+-- id x = x
 
 -- # 2.4.2 The Constant Function
 
-const :: a -> b -> a
-const x _ = x
+-- Already predefind in Prelude:
+--
+-- const :: a -> b -> a
+-- const x _ = x
 
 -- # 2.5.1 Tuples 
 
-fst :: (a,b) -> a
-fst (x,_) = x
-
-snd :: (a,b) -> b
-snd (_,y) = y
-
+-- Already predefind in Prelude:
+--
+-- fst :: (a,b) -> a
+-- fst (x,_) = x
+-- 
+-- snd :: (a,b) -> b
+-- snd (_,y) = y
+-- 
 -- # 2.5.2 Type Synonyms
 
 project' :: (Double,Double) -> (Double,Double)

@@ -5,6 +5,9 @@ import Data.Map (Map)
 import qualified Data.List as List
 import Data.Foldable
 
+import Data.Semigroup
+import Data.Monoid
+
 -- * 9.1.2 Monoids
 
 divideAndConquer :: Monoid m => [m] -> m
